@@ -15,7 +15,6 @@ import (
 	"github.com/open-cluster-management/governance-policy-propagator/pkg/controller/common"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,7 +47,7 @@ func Add(mgr manager.Manager, hubCfg *rest.Config) error {
 	}
 	var kubeClient kubernetes.Interface = kubernetes.NewForConfigOrDie(hubCfg)
 	eventsScheme := runtime.NewScheme()
-	if err = v1.AddToScheme(eventsScheme); err != nil {
+	if err = corev1.AddToScheme(eventsScheme); err != nil {
 		return err
 	}
 
@@ -59,7 +58,7 @@ func Add(mgr manager.Manager, hubCfg *rest.Config) error {
 		return err
 	}
 	eventBroadcaster.StartRecordingToSink(&kubecorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events(namespace)})
-	hubRecorder := eventBroadcaster.NewRecorder(eventsScheme, v1.EventSource{Component: controllerName})
+	hubRecorder := eventBroadcaster.NewRecorder(eventsScheme, corev1.EventSource{Component: controllerName})
 	return add(mgr, newReconciler(mgr, hubClient, hubRecorder))
 }
 
@@ -312,7 +311,7 @@ func (r *ReconcilePolicy) Reconcile(request reconcile.Request) (reconcile.Result
 	// all done, update status on managed and hub
 	// instance.Status.Details = nil
 	if !equality.Semantic.DeepEqual(newStatus.Details, oldStatus.Details) || instance.Status.ComplianceState != oldStatus.ComplianceState {
-		reqLogger.Info("status mismatch, update it... ")
+		reqLogger.Info("status mismatch on managed, update it... ")
 		err = r.managedClient.Status().Update(context.TODO(), instance)
 		if err != nil {
 			reqLogger.Error(err, "Failed to get update policy status on managed")
@@ -321,19 +320,23 @@ func (r *ReconcilePolicy) Reconcile(request reconcile.Request) (reconcile.Result
 		r.managedRecorder.Event(instance, "Normal", "PolicyStatusSync",
 			fmt.Sprintf("Policy %s status was updated in cluster namespace %s", instance.GetName(),
 				instance.GetNamespace()))
-		if "true" != os.Getenv("ON_MULTICLUSTERHUB") {
-			hubPlc.Status = instance.Status
-			err = r.hubClient.Status().Update(context.TODO(), hubPlc)
-			if err != nil {
-				reqLogger.Error(err, "Failed to get update policy status on hub")
-				return reconcile.Result{}, err
-			}
-			r.hubRecorder.Event(instance, "Normal", "PolicyStatusSync",
-				fmt.Sprintf("Policy %s status was updated in cluster namespace %s", hubPlc.GetName(),
-					hubPlc.GetNamespace()))
-		}
 	} else {
-		reqLogger.Info("status match, nothing to update... ")
+		reqLogger.Info("status match on managed, nothing to update... ")
+	}
+
+	if os.Getenv("ON_MULTICLUSTERHUB") != "true" && !equality.Semantic.DeepEqual(hubPlc.Status, instance.Status) {
+		reqLogger.Info("status not in sync, update the hub... ")
+		hubPlc.Status = instance.Status
+		err = r.hubClient.Status().Update(context.TODO(), hubPlc)
+		if err != nil {
+			reqLogger.Error(err, "Failed to get update policy status on hub")
+			return reconcile.Result{}, err
+		}
+		r.hubRecorder.Event(instance, "Normal", "PolicyStatusSync",
+			fmt.Sprintf("Policy %s status was updated in cluster namespace %s", hubPlc.GetName(),
+				hubPlc.GetNamespace()))
+	} else {
+		reqLogger.Info("status match on hub, nothing to update... ")
 	}
 
 	reqLogger.Info("Reconciling complete...")
