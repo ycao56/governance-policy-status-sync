@@ -17,7 +17,7 @@ spec:
       serviceAccountName: governance-policy-status-sync
       containers:
         - name: governance-policy-status-sync
-          image: quay.io/open-cluster-management/governance-policy-status-sync:latest-dev
+          image: quay.io/open-cluster-management/governance-policy-status-sync:latest
           command:
           - governance-policy-status-sync
           args:
@@ -36,6 +36,18 @@ spec:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
               value: "governance-policy-status-sync"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            failureThreshold: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            failureThreshold: 3
+            periodSeconds: 10
       volumes:
         - name: klusterlet-config
           secret:

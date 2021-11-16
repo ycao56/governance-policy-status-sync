@@ -23,6 +23,7 @@ type PolicySpecSyncOptions struct {
 	HubConfigFilePathName     string
 	ManagedConfigFilePathName string
 	EnableLease               bool
+	ProbeAddr                 string
 }
 
 // Options default value
@@ -65,6 +66,13 @@ func ProcessFlags() {
 		"enable-lease",
 		false,
 		"If enabled, the controller will start the lease controller to report its status",
+	)
+
+	flag.StringVar(
+		&Options.ProbeAddr,
+		"health-probe-bind-address",
+		":8081",
+		"The address the probe endpoint binds to.",
 	)
 }
 
